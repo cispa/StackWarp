@@ -1,0 +1,10 @@
+*.mod
+*.ko
+*.o
+*.order
+*.symvers
+*.cmd
+*.mod.c
+cmake-build-*
+build
+notes.txt

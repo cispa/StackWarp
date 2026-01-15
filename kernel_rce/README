@@ -1,0 +1,27 @@
+v6.10 0c3836482481200ead7b416ca80c68a29cfdaabd
+nix develop github:blitz/kernel-dev#linux_6_6_gcc
+[sev: 0c3836482481200ead7b416ca80c68a29cfdaabd https://github.com/AMDESE/linux/tree/snp-guest-latest]
+
+usage:
+build linux image and set LINUX_SRC=/path/to/linux/src
+./run-vm.sh
+in the vm run:
+gcc inject.c && (sync; ./a.out; dmesg)
+
+https://alberand.com/nixos-linux-kernel-vm.html#the-simplest-vm
+
+# Linux flags
+
+CONFIG_DEBUG_INFO_NONE=n
+- Build the kernel with CONFIG_GDB_SCRIPTS enabled, but leave
+  CONFIG_DEBUG_INFO_REDUCED off. If your architecture supports
+  CONFIG_FRAME_POINTER, keep it enabled.
+
+CONFIG_MAGIC_SYSRQ=y
+CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
+CONFIG_MAGIC_SYSRQ_SERIAL=y
+CONFIG_MAGIC_SYSRQ_SERIAL_SEQUENCE="g"
+
+# Values to update
+ret address in exploit-gdb.gdb
+halt address in inject.c
