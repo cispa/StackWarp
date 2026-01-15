@@ -7,8 +7,6 @@
 #include "../common.h"
 #include "msr_lists.h"
 
-#define MSR_LIST msr_list_lab73_tdx_enabled
-
 int main() {
     unsigned char core1, core2;
     const auto harness_size = reinterpret_cast<unsigned char*>(insn_harness_end) - reinterpret_cast<unsigned char*>(insn_harness);
@@ -52,7 +50,7 @@ int main() {
                 printf("\r%32s : MSR 0x%08lx - Mask 0x%016lx", disasm.c_str(), msr.msr, mask);
                 fflush(stdout);
 
-                if (const auto result = insn_test.run_test_simple_flip(arg); result == InsnSequenceTestResult::SeqTestBehaviorChange) {
+                if (const auto result = insn_test.run_test_jitter(arg); result == InsnSequenceTestResult::SeqTestBehaviorChange) {
                     printf("\nBehavior Change for\n\r%32s : MSR 0x%08lx - Mask 0x%016lx\n", disasm.c_str(), msr.msr, mask);
                 }
             }

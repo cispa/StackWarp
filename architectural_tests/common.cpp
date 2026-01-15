@@ -15,7 +15,6 @@
 #include "msr_lists.h"
 
 // For now, we only look at instructions that do not produce faults under normal user-mode conditions
-// TODO remove at some point
 #define NON_FAULTING_ONLY 1
 
 using namespace asmjit;
@@ -425,54 +424,6 @@ InsnSequenceTestResult InsnSequenceTest::run_test_flip_timed(const msr_flipper_a
     unsigned int signal = 0, new_checksum = 0;
 
     if (ioctl(msr_flipper_fd, IOCTL_MSR_FLIPPER_FLIP_SINGLE, reinterpret_cast<unsigned long>(&arg_wr)) < 0) {
-        perror("IOCTL_MSR_FLIPPER_FLIP");
-        return InsnSequenceTestResult::SeqTestCrash;
-    }
-
-    execute_in_harness(sequence, sequence_len, signal, new_checksum, nullptr, get_current_core_id());
-
-    return eval_test(arg, signal, new_checksum);
-}
-
-InsnSequenceTestResult InsnSequenceTest::run_test_buggy_flip(const msr_flipper_arg& arg) {
-    msr_flipper_arg arg_wr = arg;
-    unsigned int signal = 0, new_checksum = 0;
-
-    for (const auto bl_id: buggy_flip_blacklist) {
-        if (arg.id == bl_id)
-            return InsnSequenceTestResult::SeqTestOK;
-    }
-
-    if (ioctl(msr_flipper_fd, IOCTL_MSR_FLIPPER_FLIP_BUGGY, reinterpret_cast<unsigned long>(&arg_wr)) < 0) {
-        perror("IOCTL_MSR_FLIPPER_FLIP");
-        return InsnSequenceTestResult::SeqTestCrash;
-    }
-
-    execute_in_harness(sequence, sequence_len, signal, new_checksum, nullptr, get_current_core_id());
-
-    if (ioctl(msr_flipper_fd, IOCTL_MSR_FLIPPER_FLIP_BUGGY, reinterpret_cast<unsigned long>(&arg_wr)) < 0) {
-        perror("IOCTL_MSR_FLIPPER_FLIP");
-        return InsnSequenceTestResult::SeqTestCrash;
-    }
-
-    return eval_test(arg, signal, new_checksum);
-}
-
-InsnSequenceTestResult InsnSequenceTest::run_test_perma_set(const msr_flipper_arg& arg) {
-    msr_flipper_arg arg_wr = arg;
-    unsigned int signal = 0, new_checksum = 0;
-
-    for (const auto& bl: jitter_blacklist) {
-        if (bl.msr == arg.id && (bl.mask & arg.value) != 0)
-            return InsnSequenceTestResult::SeqTestOK;
-    }
-
-    for (const auto& bl_id: arg.value ? perma_set_1_blacklist : perma_set_0_blacklist) {
-        if (bl_id == arg.id)
-            return InsnSequenceTestResult::SeqTestOK;
-    }
-
-    if (ioctl(msr_flipper_fd, IOCTL_MSR_FLIPPER_WR, reinterpret_cast<unsigned long>(&arg_wr)) < 0) {
         perror("IOCTL_MSR_FLIPPER_FLIP");
         return InsnSequenceTestResult::SeqTestCrash;
     }
