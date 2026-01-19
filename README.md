@@ -21,7 +21,7 @@ You can cite our work with the following BibTeX entry:
 To prevent immediate weaponization, we have omitted end-to-end exploit chains. 
 Instead, we provide the materials, including PoCs, microbenchmarks, KVM patch (WIP), and our MSR-space fuzzer:
 
-1. `poc`: Manual StackWarp triggering only via Command-line.
+1. `poc`: The easiest way to verify if the synchronization bug is present on tested machine. 
 2. `simple-poc`: A minimal poc to validate StackWarp on the host microarchitecture.
 3. `ucode-instr-num`: Analyzing stack instruction uop counts under Stack Engine variance.
 4. `architectural_tests`: Observing architectural state shifts triggered by systematic MSR toggling to discover StackWarp.

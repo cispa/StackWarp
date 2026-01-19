@@ -2,6 +2,16 @@
 
 PoC: Return to an address on the stack --- calling an unreachable function
 
+### Preliminary
+
+If you are not sure which two cores are siblings, you can easily observe it via
+``` bash
+lscpu -e
+```
+as the sibling cores share the L1 and L2 cache.
+
+### Run
+
 ``` bash
 make
 
@@ -18,3 +28,7 @@ while true; do sudo bash -c 'CUR=$(rdmsr 0xc0011029); DISABLED=$(printf "%x" $((
 % taskset -c <Core1> ./unreach
 Unreachable!!!
 ```
+
+The output above confirms that the synchronization bug is present on this machine. 
+
+However, the presence of this bug does not necessarily mean the system is vulnerable, as this specific vulnerability only impacts TEEs.
