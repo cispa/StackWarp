@@ -1,85 +1,116 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/perf_event.h>
 #include <asm/unistd.h>
 #include <assert.h>
 
-static int fd_event_raw;
+static int fd_perf;
 
-int event_open(enum perf_type_id type, __u64 config, __u64 exclude_kernel, __u64 exclude_hv, __u64 exclude_callchain_kernel)
-{
-  static struct perf_event_attr attr;
-  attr.type = type;
-  attr.config = config;
-  attr.size = sizeof(attr);
-  attr.exclude_kernel = exclude_kernel;
-  attr.exclude_hv = exclude_hv;
-  attr.exclude_callchain_kernel = exclude_callchain_kernel;
-
-  int fd = syscall(__NR_perf_event_open, &attr, 0, -1, -1, 0);
-  assert(fd >= 0 && "perf_event_open failed: you forgot sudo or you have no perf event interface available for the userspace.");
-
-  return fd;
+// --- Perf Event Helpers ---
+int event_open_raw(__u64 event, __u64 umask) {
+    struct perf_event_attr attr = {
+        .type = PERF_TYPE_RAW,
+        .size = sizeof(struct perf_event_attr),
+        .config = (umask << 8) | (event & 0xFF),
+        .disabled = 1,
+        .exclude_kernel = 1,
+        .exclude_hv = 1,
+    };
+    int fd = syscall(__NR_perf_event_open, &attr, 0, -1, -1, 0);
+    if (fd < 0) {
+        perror("perf_event_open failed (check sudo/permissions)");
+        exit(1);
+    }
+    return fd;
 }
 
-int event_open_raw(enum perf_type_id type, __u64 event_selector, __u64 event_mask, __u64 exclude_kernel, __u64 exclude_hv, __u64 exclude_callchain_kernel)
-{
-  return event_open(type, (event_mask << 8) | event_selector, exclude_kernel, exclude_hv, exclude_callchain_kernel);
+static inline uint64_t read_perf() {
+    uint64_t val;
+    if (read(fd_perf, &val, sizeof(val)) < (ssize_t)sizeof(val)) return 0;
+    return val;
 }
 
-int event_enable(int fd)
-{
-  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+// Measurement wrapper to isolate the function call
+__attribute__((noinline,aligned(0x1000))) uint64_t measure_asm(void (*asm_func)()) {
+    ioctl(fd_perf, PERF_EVENT_IOC_RESET, 0);
+    asm volatile("mfence\nmfence\nmfence\nmfence\n");
+    ioctl(fd_perf, PERF_EVENT_IOC_ENABLE, 0);
+
+    asm_func();
+    
+    ioctl(fd_perf, PERF_EVENT_IOC_DISABLE, 0);
+    asm volatile("mfence\nmfence\nmfence\nmfence\n");
+    
+    return read_perf();
 }
 
-int event_reset(int fd)
-{
-  ioctl(fd, PERF_EVENT_IOC_RESET, 0);
-}
+// --- Test Case Generation ---
+// Using your corrected instruction pairs to maintain register/stack state
+#define GEN_TEST(name, base_asm, inst_asm) \
+    __attribute__((naked)) void func_##name##_base() { \
+        asm volatile("push rbp\n\tmov rbp, rsp\n\t" \
+          base_asm \
+          "\n\tmfence\nmfence\nmfence\nmfence\n \
+          mov rsp, rbp\n\tpop rbp\n\t \
+          ret\n\t"); \
+    } \
+    __attribute__((naked)) void func_##name##_test() { \
+        asm volatile("push rbp\n\tmov rbp, rsp\n\t" \
+        inst_asm \
+        "\n\tmfence\nmfence\nmfence\nmfence\n \
+        mov rsp, rbp\n\tpop rbp\n\t \
+        ret\n\t"); \
+    }
 
-int event_disable(int fd)
-{
-  ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
-}
+GEN_TEST(push_reg, "", "push rax\n\t")
+GEN_TEST(pop_reg,  "sub rsp, 8\n\tpop rax", "sub rsp, 0x10\n\tpop rax\n\tpop rax")
 
-void f2(){}
+GEN_TEST(mov_rsp,  "push rax\n\t", "push rax\n\tmov rsp, rdi")
+GEN_TEST(add_rsp,  "", "sub rsp, 8\n\t")
 
-__attribute__((naked)) void f1(void *p, void *p2, void *p3) {
-        asm volatile("push rbp\n\t");
-        asm volatile("mov rbp, rsp\n\t");
-        asm volatile("mfence\nmfence\nmfence\nmfence\n");
+GEN_TEST(sub_rbp,  "add rbp, 8\n\tsub rbp, 8", "add rbp, 8\n\tadd rbp, 8\n\tsub rbp, 0x10")
+GEN_TEST(add_rcx,  "add rax, 8\n\tsub rax, 8", "add rax, 8\n\tadd rax, 8\n\tsub rax, 0x10")
 
-        /*
-        asm volatile("push rdi\n\t");
-        asm volatile("push rsi\n\t");
-        asm volatile("push rdx\n\t");
-        asm volatile("sub rsp, 8\n\t");
-        */
+GEN_TEST(mfence,   "", "mfence")
 
-        asm volatile("mfence\nmfence\nmfence\nmfence\n");
-        asm volatile("mov rsp, rbp\n\t");
-
-        asm volatile("pop rbp\n");
-        asm volatile("ret\n\t");
-}
+typedef struct {
+    const char* label;
+    void (*base_fn)();
+    void (*test_fn)();
+} test_suite_t;
 
 int main() {
-        // 0x1c1 - Retired Microcoded Instructions
-        // 0x1c2 - Retired Microcoded Ops
-        fd_event_raw = event_open_raw(PERF_TYPE_RAW, 0x1c1, 0xff, 1, 1, 1);
-        event_enable(fd_event_raw);
-        event_reset(fd_event_raw);
+    // 0x1c1: Retired Microcoded Instructions
+    fd_perf = event_open_raw(0x1c1, 0x0);
+    
+    test_suite_t suite[] = {
+        {"push REG", func_push_reg_base, func_push_reg_test},
+        {"pop REG", func_pop_reg_base, func_pop_reg_test},
+        {"mov rsp, rbp",       func_mov_rsp_base,  func_mov_rsp_test},
+        {"add rsp / sub rsp",  func_add_rsp_base,  func_add_rsp_test},
+        {"add rbp / sub rbp",  func_sub_rbp_base,  func_sub_rbp_test},
+        {"add rcx / sub rcx",  func_add_rcx_base,  func_add_rcx_test},
+        {"mfence (extra)",     func_mfence_base,   func_mfence_test},
+    };
 
-        f1(&f2, &f2, &f2);
-        event_disable(fd_event_raw);
-        size_t result = 0;
-        if (read(fd_event_raw, &result, sizeof(result)) < (size_t)sizeof(result))
-        {
-                return;
-        }
-        printf("PMC res:%lu", result);
+    printf("%-22s | %-6s | %-6s | %-6s\n", "Instruction Pair", "Base", "Total", "Delta");
+    printf("----------------------------------------------------------\n");
+
+    for (int i = 0; i < sizeof(suite)/sizeof(suite[0]); i++) {
+        // measure_asm(suite[i].base_fn);
+        uint64_t base = measure_asm(suite[i].base_fn);
+
+        // measure_asm(suite[i].test_fn);
+        uint64_t total = measure_asm(suite[i].test_fn);
+
+        int64_t delta = (int64_t)total - (int64_t)base;
+        
+        printf("%-22s | %-6lu | %-6lu | %-6ld\n", suite[i].label, base, total, delta);
+    }
+
+    close(fd_perf);
+    return 0;
 }
