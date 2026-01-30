@@ -16,7 +16,7 @@ Then, change the definition of the `MSR_LIST` macro to the name of your array. E
 ```C
 #define MSR_LIST msr_list_stackwarp
 ```
-An example list for Intel Coffee Lake processors is already in the file.
+Two example lists for AMD Zen 4 processors and Intel Coffee Lake processors are already in the file.
 
 ### Building
 Install the build dependencies as follows:
@@ -32,6 +32,7 @@ A full rebuild is required after changing the MSR list.
 ### Running
 Before running the tests, insert the MSR access kernel module as follows:
 ```shell
+cd build
 sudo insmod msr_flipper.ko
 ```
 
